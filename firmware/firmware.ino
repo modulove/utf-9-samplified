@@ -1,14 +1,13 @@
 /*
-   The Bleep Drum
+   Orirgina: The Bleep Drum
    By John-Mike Reed aka Dr. Bleep
    https://bleeplabs.com/product/the-bleep-drum/
 
-   Updated version for April 2020 rerelease
-   
-   This code is for 2020 hardware. Use the "legacy upgrage" code for older devices. 
+   Updated version for 2025 WGD Modular UTF-9 rerelease
+   This code is for 2025 hardware. Use the "legacy upgrade" code for older devices. 
 
+   Tested in Modulove 2025 Workshop series.
 */
-
 
 #include <MIDI.h>
 MIDI_CREATE_DEFAULT_INSTANCE();
@@ -18,44 +17,27 @@ MIDI_CREATE_DEFAULT_INSTANCE();
 #include <Bounce2.h>
 #define BOUNCE_LOCK_OUT
 
+// ------------------------- Buttons-------------------------
+#define BTN1_PIN 4   // ("red")
+#define BTN2_PIN 2   // ("blue")
+#define BTN3_PIN 7   // ("green")
+#define BTN4_PIN 19  // ("yellow")
+
 Bounce debouncerRed = Bounce();
 Bounce debouncerGreen = Bounce();
 Bounce debouncerBlue = Bounce();
 Bounce debouncerYellow = Bounce();
 
-
-//old board
-/*
-  #define red_pin 2
-  #define blue_pin 19
-  #define green_pin 17
-  #define yellow_pin 18
-
-  #define LED_invert 0
-
-  #define play_pin 3
-  #define rec_pin 4
-  #define tap_pin 8
-  #define shift_pin 7
-
-*/
-
-#define red_pin 4
-#define blue_pin 2
-#define green_pin 7
-#define yellow_pin 19
-
-#define LED_invert 1
-
-#define play_pin 3
-#define rec_pin 8
-#define tap_pin 18
-#define shift_pin 17
-
+// ------------------------- Control pins -------------------------
+#define play_pin  3   // PLAY  (digital input, pull-up)
+#define rec_pin   8   // REC   (digital input, pull-up)
+#define tap_pin   18  // TAP   (digital input, pull-up)
+#define shift_pin 17  // SHIFT (digital input, pull-up)
 
 uint32_t cm, pm;
 const char noise_table[] PROGMEM = {};
 const unsigned long dds_tune = 4294967296 / 9800; // 2^32/measured dds freq but this takes too long
+
 int sample_holder1, sample_holder2;
 int eee;
 byte erase_latch;
@@ -109,8 +91,8 @@ byte tap, tapbutton, ptapbutton, eigth;
 long tapholder, prevtap;
 unsigned long taptempo = 1000;
 unsigned long ratepot;
-byte r, g, b, erase, e, preveigth;
-byte trigger_input, trigger_output,   trigger_out_latch, tl;
+byte erase, e, preveigth;
+byte trigger_input, trigger_output, trigger_out_latch, tl;
 byte button1, button2, button3, button4, tapb;
 byte pbutton1, pbutton2, pbutton3, pbutton4, ptapb;
 byte prev_trigger_in_read, trigger_in_read, tiggertempo, trigger_step, triggerled, ptrigger_step;
@@ -142,105 +124,69 @@ byte printer = 0;
 uint32_t erase_led;
 
 void setup() {
-
   if (printer == 1) {
     Serial.begin(9600);
   }
   cli();
 
-  pinMode (12, OUTPUT); pinMode (13, OUTPUT); pinMode (11, OUTPUT); pinMode (10, OUTPUT);
-  pinMode (9, OUTPUT); pinMode (5, OUTPUT);  pinMode (6, OUTPUT);
-  pinMode (16, OUTPUT);
+  // Outputs actually used by firmware:
+  pinMode(12, OUTPUT); // step trigger out
+  pinMode(13, OUTPUT);
+  pinMode(11, OUTPUT);
+  pinMode(10, OUTPUT); // DAC CS
+  pinMode(16, OUTPUT);
+  digitalWrite(16, HIGH); // legacy/unused pull-high as in original
 
-  pinMode (3, INPUT);     digitalWrite(3, HIGH);  //play
-  pinMode (4, INPUT);     digitalWrite (8, HIGH); //rec
-  pinMode (8, INPUT);     digitalWrite (17, HIGH); //tap
-  pinMode (7, INPUT);     digitalWrite(18, HIGH);   //shift
-  pinMode (12, OUTPUT);
+  // Buttons (internal pull-ups)
+  pinMode(play_pin,  INPUT_PULLUP);
+  pinMode(rec_pin,   INPUT_PULLUP);
+  pinMode(tap_pin,   INPUT_PULLUP);
+  pinMode(shift_pin, INPUT_PULLUP);
 
-  pinMode (green_pin, INPUT_PULLUP);   //low left clap green
-  pinMode (yellow_pin, INPUT_PULLUP);   // low right kick yellow
-  pinMode (blue_pin, INPUT_PULLUP);    //Up Right tom Blue
-  pinMode (red_pin, INPUT_PULLUP);   // Up right pew red
+  pinMode(BTN1_PIN, INPUT_PULLUP);
+  pinMode(BTN2_PIN, INPUT_PULLUP);
+  pinMode(BTN3_PIN, INPUT_PULLUP);
+  pinMode(BTN4_PIN, INPUT_PULLUP);
 
-  debouncerGreen.attach(green_pin);
-  debouncerGreen.interval(2); // interval in ms
-  debouncerYellow.attach(yellow_pin);
-  debouncerYellow.interval(2); // interval in ms
-  debouncerBlue.attach(blue_pin);
-  debouncerBlue.interval(2); // interval in ms
-  debouncerRed.attach(red_pin);
-  debouncerRed.interval(2); // interval in ms
+  debouncerGreen.attach(BTN3_PIN);
+  debouncerGreen.interval(2);
+  debouncerYellow.attach(BTN4_PIN);
+  debouncerYellow.interval(2);
+  debouncerBlue.attach(BTN2_PIN);
+  debouncerBlue.interval(2);
+  debouncerRed.attach(BTN1_PIN);
+  debouncerRed.interval(2);
 
   delay(100);
 
-
   if (printer == 0) {
-    if (digitalRead(2) == LOW) {
-      analogWrite(6, 64); //green
-      MIDI.begin(3);
-      delay(20000);
-
-    }
-    else if (digitalRead(4) == LOW) {
-      analogWrite(5, 64); //RED
-      MIDI.begin(1);
-      delay(20000); // we're messing with the timers so this isn't actually 20000 Millis
-
-    }
-    else if (digitalRead(7) == LOW) {
-      analogWrite(9, 64); //Blue
-      MIDI.begin(2);
-      delay(20000);
-
-    }
-    else if (digitalRead(19) == LOW) {
-      analogWrite(5, 48); //yellow
-      analogWrite(6, 16);
-
-      MIDI.begin(4);
-      delay(20000);
-
-    }
-
-    else {
-      MIDI.begin(0);
-    }
-
+    MIDI.begin(0);
     MIDI.turnThruOff();
   }
 
-  //pinMode (16, INPUT); digitalWrite (16, HIGH);
-  digitalWrite(16, HIGH); //
   SPI.begin();
   SPI.setBitOrder(MSBFIRST);
 
-  /* Enable interrupt on timer2 == 127, with clk/8 prescaler. At 16MHz,
-     this gives a timer interrupt at 15625Hz. */
-
-
+  // Timer2 setup for ISR audio routine
   TIMSK2 = (1 << OCIE2A);
-  OCR2A = 50; // sets the compare. measured at 9813Hz
+  OCR2A = 50; // ~9813Hz
 
-  TCCR2A = 1 << WGM21 | 0 << WGM20; /* CTC mode, reset on match */
-  TCCR2B = 0 << CS22 | 1 << CS21 | 1 << CS20; /* clk, /8 prescaler */
-
+  TCCR2A = 1 << WGM21 | 0 << WGM20;
+  TCCR2B = 0 << CS22 | 1 << CS21 | 1 << CS20; // clk, /8 prescaler
 
   TCCR0B = B0000001;
   TCCR1B = B0000001;
 
-
-
   sei();
+
   if (digitalRead(shift_pin) == 0) {
     noise_mode = 1;
   }
   else {
     noise_mode = 0;
   }
-
-
 }
+
 
 byte out_test, out_tick = 1;
 int sine_sample;
@@ -791,111 +737,9 @@ void RECORD() {
 
 void LEDS() {
 
-  int binv = 255 - bout;
-  int ginv = 255 - gout;
-  int rinv = 255 - rout;
-  analogWrite(9, binv); //Blue
-  analogWrite(6, ginv); //green
-  analogWrite(5, rinv);
+ preveigth = eigth;
 
-  if (noise_mode == 1) {
-    rout = r;
-    gout = g;
-    bout = b;
-    if (shift_latch == 1) {
-      if (record == 0 && play == 0 ) {
-        r = sample_out >> 3;
-        b = sample_out >> 3;
-      }
-    }
-    if (shift_latch == 0) {
-      if (record == 0 && play == 0 ) {
-        g = sample_out >> 3;
-        b = sample_out >> 4;
-      }
-    }
-  }
-
-  preveigth = eigth;
-/*
-  if (g > 1) {
-    g--;
-  }
-  if (g <= 1) {
-    g = 0;
-  }
-
-  if (r > 1) {
-    r--;
-  }
-  if (r <= 1) {
-    r = 0;
-  }
-
-  if (b > 1) {
-    b--;
-  }
-  if (b <= 1) {
-    b = 0;
-  }
-  */
-  if (noise_mode == 0) {
-    if (record == 0 && play == 0 ) {
-
-      rout = 16;
-      gout = 16;
-      bout = 16;
-    }
-
-  }
-
-
-  if (play == 1 && record == 0) {
-    bout = b * !erase;
-    rout = r * !erase;
-    gout = g * !erase;
-
-    if ( loopstep == 0 ) {
-      r = 12;
-      g = 15;
-      b = 12;
-    }
-    else if ( loopstep % 4 == 0) {
-      r = 8;
-      g = 10;
-      b = 10;
-    }
-    else {
-      b = bankpb;
-      r = bankpr;
-      g = bankpg;
-    }
-
-  }
-
-  if (play == 1 && record == 1 ) {
-    bout = b;
-    rout = r;
-    gout = g;
-
-    if ( loopstep == 0 ) {
-      r = 30;
-      g = 6;
-      b = 6;
-    }
-    else if ( loopstep % 4 == 0) {
-      r = 20;
-      g = 2;
-      b = 2;
-    }
-    else {
-      b = bankpb;
-      r = bankpr;
-      g = bankpg;
-    }
-  }
 }
-
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
