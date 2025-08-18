@@ -5,8 +5,6 @@
 
    Updated version for 2025 WGD Modular UTF-9 rerelease
    This code is for 2025 hardware. Use the "legacy upgrade" code for older devices. 
-
-   Tested in Modulove 2025 Workshop series.
 */
 
 #include <MIDI.h>
@@ -17,11 +15,11 @@ MIDI_CREATE_DEFAULT_INSTANCE();
 #include <Bounce2.h>
 #define BOUNCE_LOCK_OUT
 
-// ------------------------- Buttons-------------------------
-#define BTN1_PIN 4   // ("red")
-#define BTN2_PIN 2   // ("blue")
-#define BTN3_PIN 7   // ("green")
-#define BTN4_PIN 19  // ("yellow")
+// ------------------------- Buttons -------------------------
+#define BTN1_PIN 4
+#define BTN2_PIN 2
+#define BTN3_PIN 7
+#define BTN4_PIN 19
 
 Bounce debouncerRed = Bounce();
 Bounce debouncerGreen = Bounce();
@@ -36,16 +34,16 @@ Bounce debouncerYellow = Bounce();
 
 uint32_t cm, pm;
 const char noise_table[] PROGMEM = {};
-const unsigned long dds_tune = 4294967296 / 9800; // 2^32/measured dds freq but this takes too long
+const unsigned long dds_tune = 4294967296 / 9800; // 2^32 / measured dds freq
 
+// --- Variables (LEDs removed) ---
 int sample_holder1, sample_holder2;
 int eee;
 byte erase_latch;
-byte shift, bankpg, bankpr, bout, rout, gout, prevpot2;
+byte shift, prevpot2;
 byte banko = 0;
 byte n1, n2;
 int n3;
-byte bankpb = 4;
 byte beat;
 uint16_t pot1, pot2;
 long pot3 = 200, pot4 = 200;
@@ -68,7 +66,6 @@ byte noise_type;
 uint16_t index, index2, index3, index4, index5, index4b, index_freq_1, index_freq_2, index4bv;
 uint16_t indexr, index2r, index3r, index4r, index4br, index2vr, index4vr;
 int osc, oscc;
-byte ledstep;
 byte noise_mode = 1;
 unsigned long freq, freq2;
 int wavepot, lfopot, arppot;
@@ -91,7 +88,7 @@ byte tap, tapbutton, ptapbutton, eigth;
 long tapholder, prevtap;
 unsigned long taptempo = 1000;
 unsigned long ratepot;
-byte erase, e, preveigth;
+byte e;
 byte trigger_input, trigger_output, trigger_out_latch, tl;
 byte button1, button2, button3, button4, tapb;
 byte pbutton1, pbutton2, pbutton3, pbutton4, ptapb;
@@ -121,7 +118,6 @@ byte click_play, click_en;
 int shift_time;
 int shift_time_latch;
 byte printer = 0;
-uint32_t erase_led;
 
 void setup() {
   if (printer == 1) {
@@ -129,13 +125,13 @@ void setup() {
   }
   cli();
 
-  // Outputs actually used by firmware:
+  // Outputs (keep clock LED pin as OUTPUT but unused here)
   pinMode(12, OUTPUT); // step trigger out
-  pinMode(13, OUTPUT);
+  pinMode(13, OUTPUT); // clock LED (kept)
   pinMode(11, OUTPUT);
   pinMode(10, OUTPUT); // DAC CS
   pinMode(16, OUTPUT);
-  digitalWrite(16, HIGH); // legacy/unused pull-high as in original
+  digitalWrite(16, HIGH); // legacy/unused pull-high
 
   // Buttons (internal pull-ups)
   pinMode(play_pin,  INPUT_PULLUP);
@@ -167,47 +163,38 @@ void setup() {
   SPI.begin();
   SPI.setBitOrder(MSBFIRST);
 
-  // Timer2 setup for ISR audio routine
+  // Timer2 ISR at ~9.8 kHz
   TIMSK2 = (1 << OCIE2A);
-  OCR2A = 50; // ~9813Hz
+  OCR2A = 50;
 
-  TCCR2A = 1 << WGM21 | 0 << WGM20;
-  TCCR2B = 0 << CS22 | 1 << CS21 | 1 << CS20; // clk, /8 prescaler
+  TCCR2A = (1 << WGM21);
+  TCCR2B = (1 << CS21) | (1 << CS20); // clk/8
 
   TCCR0B = B0000001;
   TCCR1B = B0000001;
 
   sei();
 
-  if (digitalRead(shift_pin) == 0) {
-    noise_mode = 1;
-  }
-  else {
-    noise_mode = 0;
-  }
+  noise_mode = (digitalRead(shift_pin) == 0) ? 1 : 0;
 }
-
 
 byte out_test, out_tick = 1;
 int sine_sample;
 byte index_sine;
 uint32_t acc_sine;
 uint32_t trig_out_time, trig_out_latch;
+
 ISR(TIMER2_COMPA_vect) {
-  //
   dds_time++;
   OCR2A = 50;
 
   prevloopstep = loopstep;
-  preva = eigth;
+
   if (recordmode == 1 && miditempo == 0 && tiggertempo == 0) {
-    if (dds_time - prev > (taptempof) ) {
+    if (dds_time - prev > taptempof) {
       prev = dds_time;
       loopstep++;
-      if (loopstep > 31)
-      {
-        loopstep = 0;
-      }
+      if (loopstep > 31) loopstep = 0;
     }
   }
 
@@ -216,8 +203,7 @@ ISR(TIMER2_COMPA_vect) {
       bft = 0;
       bft_latch = 0;
       tiggertempo = 0;
-      t++;
-      t %= 2;
+      t++; t %= 2;
       tapbank[t] = (dds_time - prevtap) >> 2;
       taptempo = ((tapbank[0] + tapbank[1]) >> 1);
       prevtap = dds_time;
@@ -226,27 +212,17 @@ ISR(TIMER2_COMPA_vect) {
 
   taptempof = taptempo;
 
-  recordoffsettimer = dds_time - prev ;
-  offsetamount = taptempof - (taptempof >> 2 );
+  recordoffsettimer = dds_time - prev;
+  offsetamount = taptempof - (taptempof >> 2);
 
-  if ((recordoffsettimer) > (offsetamount))
-  {
+  if (recordoffsettimer > offsetamount) {
     loopstepf = loopstep + 1;
-    if (loopstepf > 31) {
-      loopstepf = 0;
-    }
+    if (loopstepf > 31) loopstepf = 0;
   }
 
-  if (loopstep % 4 == 0) {
-    click_pitch = 220;
-  }
-  if (loopstep % 8 == 0) {
-    click_pitch = 293;
-  }
-
-  if (loopstep == 0) {
-    click_pitch = 440;
-  }
+  if (loopstep % 4 == 0)  click_pitch = 220;
+  if (loopstep % 8 == 0)  click_pitch = 293;
+  if (loopstep == 0)      click_pitch = 440;
 
   if (play == 1) {
     click_play = 1;
@@ -254,18 +230,14 @@ ISR(TIMER2_COMPA_vect) {
     B1_loop_trigger = B1_sequence[loopstep + banko];
     B2_loop_trigger = B2_sequence[loopstep + banko];
     B3_loop_trigger = B3_sequence[loopstep + banko];
-  }
-
-  if (play == 0) {
+  } else {
     loopstep = 31;
     prev = 0;
     click_play = 0;
-    B4_loop_trigger = 0;
-    B1_loop_trigger = 0;
-    B2_loop_trigger = 0;
-    B3_loop_trigger = 0;
+    B4_loop_trigger = B1_loop_trigger = B2_loop_trigger = B3_loop_trigger = 0;
   }
 
+  // step trigger out (clock)
   if (loopstep != prevloopstep) {
     digitalWrite(12, 1);
     trig_out_time = dds_time;
@@ -276,256 +248,131 @@ ISR(TIMER2_COMPA_vect) {
     digitalWrite(12, 0);
   }
 
-  if (loopstep != prevloopstep && B3_loop_trigger == 1) {
-    B3_seq_trigger = 1;
-  }
-  else {
-    B3_seq_trigger = 0;
-  }
+  B3_seq_trigger = (loopstep != prevloopstep && B3_loop_trigger == 1);
+  B2_seq_trigger = (loopstep != prevloopstep && B2_loop_trigger == 1);
+  B4_seq_trigger = (loopstep != prevloopstep && B4_loop_trigger == 1);
+  B1_seq_trigger = (loopstep != prevloopstep && B1_loop_trigger == 1);
 
-  if (loopstep != prevloopstep && B2_loop_trigger == 1) {
-    B2_seq_trigger = 1;
-  }
-  else {
-    B2_seq_trigger = 0;
-  }
+  if (B3_trigger == 1 || B3_seq_trigger == 1) { index3 = 0; accumulator3 = 0; B3_latch = 1; }
+  if (B4_trigger == 1 || B4_seq_trigger == 1) { index4 = 0; accumulator4 = 0; B4_latch = 1; }
+  if (B1_trigger == 1)                          { index  = 0; accumulator  = 0; B1_latch = 1; }
+  if (B1_seq_trigger == 1)                      { index_freq_1 = 0; accu_freq_1 = 0; B1_seq_latch = 1; }
+  if (B2_seq_trigger == 1)                      { index_freq_2 = 0; accu_freq_2 = 0; B2_seq_latch = 1; }
+  if (B2_trigger == 1)                          { index2 = 0; accumulator2 = 0; B2_latch = 1; }
 
-  if (loopstep != prevloopstep && B4_loop_trigger == 1) {
-    B4_seq_trigger = 1;
-  }
-  else {
-    B4_seq_trigger = 0;
-  }
-
-  if (loopstep != prevloopstep && B1_loop_trigger == 1) {
-    B1_seq_trigger = 1;
-  }
-  else {
-    B1_seq_trigger = 0;
-  }
-
-  if (B3_trigger == 1 || B3_seq_trigger == 1) {
-    index3 = 0;
-    accumulator3 = 0;
-    B3_latch = 1;
-  }
-
-  if (B4_trigger == 1 || B4_seq_trigger == 1) {
-    index4 = 0;
-    accumulator4 = 0;
-    B4_latch = 1;
-  }
-  if (B1_trigger == 1) {
-    index = 0;
-    accumulator = 0;
-    B1_latch = 1;
-  }
-  if (B1_seq_trigger == 1) {
-    index_freq_1 = 0;
-    accu_freq_1 = 0;
-    B1_seq_latch = 1;
-  }
-  if (B2_seq_trigger == 1) {
-    index_freq_2 = 0;
-    accu_freq_2 = 0;
-    B2_seq_latch = 1;
-  }
-  if (B2_trigger == 1) {
-    index2 = 0;
-    accumulator2 = 0;
-    B2_latch = 1;
-  }
-
-  if (loopstep % 4 == 0 && prevloopstep % 4 != 0) {
-    click_amp = 64;
-  }
+  if (loopstep % 4 == 0 && prevloopstep % 4 != 0) click_amp = 64;
 
   sine_sample = (((pgm_read_byte(&sine_table[index_sine]) - 127) * click_amp) >> 8) * click_play * click_en;
-  //sine_sample = ((sine_table[index_sine]));
 
-  if (playmode == 0) { //reverse
-    snare_sample = (pgm_read_byte(&snare_table[(indexr)])) - 127;
-    kick_sample = (pgm_read_byte(&kick_table[(index2r)])) - 127;
-    hat_sample = (pgm_read_byte(&tick_table[(index3r)])) - 127;
-    bass_sample = (((pgm_read_byte(&bass_table[(index4r)])))) - 127;
-
-    B1_freq_sample = pgm_read_byte(&tick_table[(index2vr)]) - 127;
-    B2_freq_sample = (pgm_read_byte(&bass_table[(index4vr)])) - 127;
+  if (playmode == 0) { // reverse
+    snare_sample = (pgm_read_byte(&snare_table[indexr])) - 127;
+    kick_sample  = (pgm_read_byte(&kick_table[index2r])) - 127;
+    hat_sample   = (pgm_read_byte(&tick_table[index3r])) - 127;
+    bass_sample  = (pgm_read_byte(&bass_table[index4r])) - 127;
+    B1_freq_sample = pgm_read_byte(&tick_table[index2vr]) - 127;
+    B2_freq_sample = pgm_read_byte(&bass_table[index4vr]) - 127;
   }
 
   if (playmode == 1) {
-    snare_sample = (pgm_read_byte(&snare_table[(index3)])) - 127;
-    kick_sample = (pgm_read_byte(&kick_table[(index4)])) - 127;
-    hat_sample = (pgm_read_byte(&tick_table[(index)])) - 127;
-    bass_sample = (((pgm_read_byte(&bass_table[(index2)])))) - 127;
-    B1_freq_sample = pgm_read_byte(&tick_table[(index_freq_1)]) - 127;
-    B2_freq_sample = (pgm_read_byte(&bass_table[(index_freq_2)])) - 127;
-
-    noise_sample = (((pgm_read_byte(&sine_table[(index5)])))) - 127;
-
+    snare_sample   = (pgm_read_byte(&snare_table[index3])) - 127;
+    kick_sample    = (pgm_read_byte(&kick_table[index4])) - 127;
+    hat_sample     = (pgm_read_byte(&tick_table[index])) - 127;
+    bass_sample    = (pgm_read_byte(&bass_table[index2])) - 127;
+    B1_freq_sample =  pgm_read_byte(&tick_table[index_freq_1]) - 127;
+    B2_freq_sample = (pgm_read_byte(&bass_table[index_freq_2])) - 127;
+    noise_sample   = (pgm_read_byte(&sine_table[index5])) - 127;
   }
 
   if (noise_mode == 1) {
     sample_sum = (snare_sample + kick_sample + hat_sample + bass_sample + B1_freq_sample + B2_freq_sample);
     byte sine_noise = ((sine_sample) | (noise_sample >> 2) * click_amp >> 2) >> 3;
-
-    if (click_play == 0 | click_en == 0 | click_amp < 4) {
-      sine_noise = 0;
-    }
+    if (click_play == 0 || click_en == 0 || click_amp < 4) sine_noise = 0;
 
     sample_holder1 = ((sample_sum ^ (noise_sample >> 1)) >> 1) + 127;
-    if (B1_latch == 0 && B2_latch == 0  && B3_latch == 0  && B4_latch == 0 ) {
-      sample_out_temp = 127  + sine_noise ;
+    if (B1_latch == 0 && B2_latch == 0 && B3_latch == 0 && B4_latch == 0) {
+      sample_out_temp = 127 + sine_noise;
+    } else {
+      sample_out_temp = sample_holder1 + sine_noise;
     }
-    else {
-      sample_out_temp = sample_holder1   + sine_noise ;
-    }
-  }
-
-  if (noise_mode == 0) {
+  } else {
     sample_out_temp = ((snare_sample + kick_sample + hat_sample + bass_sample + B1_freq_sample + B2_freq_sample + sine_sample) >> 1) + 127;
   }
-  if (sample_out_temp > 255) {
-    sample_out_temp -= (sample_out_temp - 255) << 1; //fold don't clip!
-  }
-  if (sample_out_temp < 0) {
-    sample_out_temp += sample_out_temp * -2;
-  }
+
+  if (sample_out_temp > 255) sample_out_temp -= (sample_out_temp - 255) << 1; // fold don't clip
+  if (sample_out_temp < 0)   sample_out_temp += sample_out_temp * -2;
+
   sample_out = sample_out_temp;
 
-  uint16_t dac_out = (0 << 15) | (1 << 14) | (1 << 13) | (1 << 12) | ( sample_out << 4 );
+  uint16_t dac_out = (0 << 15) | (1 << 14) | (1 << 13) | (1 << 12) | (sample_out << 4);
   digitalWrite(10, LOW);
   SPI.transfer(dac_out >> 8);
   SPI.transfer(dac_out & 255);
   digitalWrite(10, HIGH);
 
-  ///////////////////////////////////////////////////////////////////////////////
-
-  acc_sine += click_pitch << 2 ;
+  acc_sine += click_pitch << 2;
   index_sine = (dds_tune * acc_sine) >> (32 - 8);
-  //  index_sine = (acc_sine << 15) >> (32 - 8); //fast and the pitches arent critical
+
   click_wait++;
   if (click_wait > 4) {
     click_wait = 0;
-
-    if (click_amp >= 4) {
-      click_amp -= 1;
-    }
-    if (click_amp < 4) {
-      click_amp = 0;
-    }
+    if (click_amp >= 4) click_amp -= 1;
+    if (click_amp < 4)  click_amp = 0;
   }
 
   if (playmode == 0) {
-    indexr = (index3 - snare_length) * -1;
-    index2r = (index4 - kick_length) * -1;
-    index3r = (index - tick_length) * -1;
-    index4r = (index2 - bass_length) * -1;
+    indexr  = (index3 - snare_length) * -1;
+    index2r = (index4 - kick_length)  * -1;
+    index3r = (index  - tick_length)  * -1;
+    index4r = (index2 - bass_length)  * -1;
     index2vr = (index_freq_1 - tick_length) * -1;
     index4vr = (index_freq_2 - bass_length) * -1;
-
   }
 
   if (B1_latch == 1) {
-    if (midicc1 > 4) {
-      accumulator += midicc1;
-    }
-    else {
-      accumulator += pot1;
-    }
-    index = (accumulator >> (6));
-    if (index > tick_length) {
-      index = 0;
-      accumulator = 0;
-      B1_latch = 0;
-    }
+    if (midicc1 > 4) accumulator += midicc1; else accumulator += pot1;
+    index = (accumulator >> 6);
+    if (index > tick_length) { index = 0; accumulator = 0; B1_latch = 0; }
   }
 
   if (B2_latch == 1) {
-    if (midicc2 > 4) {
-      accumulator2 += midicc2;
-    }
-    else {
-      accumulator2 += pot2;
-    }
-    index2 = (accumulator2 >> (6));
-    if (index2 > bass_length) {
-      index2 = 0;
-      accumulator2 = 0;
-      B2_latch = 0;
-    }
+    if (midicc2 > 4) accumulator2 += midicc2; else accumulator2 += pot2;
+    index2 = (accumulator2 >> 6);
+    if (index2 > bass_length) { index2 = 0; accumulator2 = 0; B2_latch = 0; }
   }
 
   if (B3_latch == 1) {
-    accumulator3 += (midicc3);
+    accumulator3 += midicc3;
     index3 = (accumulator3 >> 6);
-    if (index3 > snare_length) {
-
-      index3 = 0;
-      accumulator3 = 0;
-      B3_latch = 0;
-    }
+    if (index3 > snare_length) { index3 = 0; accumulator3 = 0; B3_latch = 0; }
   }
 
   if (B4_latch == 1) {
-    accumulator4 += (midicc4);
-    // index4b=(accumulator4 >> (6));
-    index4 = (accumulator4 >> (6));
-    if (index4 > kick_length) {
-
-      index4 = 0;
-      accumulator4 = 0;
-      B4_latch = 0;
-    }
+    accumulator4 += midicc4;
+    index4 = (accumulator4 >> 6);
+    if (index4 > kick_length) { index4 = 0; accumulator4 = 0; B4_latch = 0; }
   }
 
   accu_freq_1 += kf;
-  index_freq_1 = (accu_freq_1 >> (6));
-  if (B1_seq_trigger == 1) {
-    kf = B1_freq_sequence[loopstep + banko];
-    kfe = kf;
-  }
-
-  if (index_freq_1 > tick_length) {
-    kf = 0;
-    index_freq_1 = 0;
-    accu_freq_1 = 0;
-    B1_seq_latch = 0;
-  }
-
+  index_freq_1 = (accu_freq_1 >> 6);
+  if (B1_seq_trigger == 1) { kf = B1_freq_sequence[loopstep + banko]; kfe = kf; }
+  if (index_freq_1 > tick_length) { kf = 0; index_freq_1 = 0; accu_freq_1 = 0; B1_seq_latch = 0; }
 
   accu_freq_2 += pf;
-  index_freq_2 = (accu_freq_2 >> (6));
-
-  if (B2_seq_trigger == 1 && tiggertempo == 0) {
-    pf = B2_freq_sequence[loopstepf + banko];
-  }
-
-  if (B2_seq_trigger == 1 && tiggertempo == 1) {
-    pf = B2_freq_sequence[loopstep + banko];
-  }
-  if (index_freq_2 > bass_length) {
-    pf = 0;
-    index_freq_2 = 0;
-    accu_freq_2 = 0;
-    B2_seq_latch = 0;
-  }
+  index_freq_2 = (accu_freq_2 >> 6);
+  if (B2_seq_trigger == 1 && tiggertempo == 0) pf = B2_freq_sequence[loopstepf + banko];
+  if (B2_seq_trigger == 1 && tiggertempo == 1) pf = B2_freq_sequence[loopstep + banko];
+  if (index_freq_2 > bass_length) { pf = 0; index_freq_2 = 0; accu_freq_2 = 0; B2_seq_latch = 0; }
 
   if (noise_mode == 1) {
-    accumulator5 += (pot3);
-    index5 = (accumulator5 >> (6));
-    if (index5 > pot4) {
-      index5 = 0;
-      accumulator5 = 0;
-    }
+    accumulator5 += pot3;
+    index5 = (accumulator5 >> 6);
+    if (index5 > pot4) { index5 = 0; accumulator5 = 0; }
   }
-
 }
 
-///////////////////////////////////////////////////////////////////////////////loop
+// ---------------------------------------------------------------------------
 
 void loop() {
-
   cm = millis();
   if (printer == 1) {
     if (cm - pm > 10000) {
@@ -539,10 +386,7 @@ void loop() {
 
   midi_note_check = midi_note_on();
 
-  pbutton1 = button1;
-  pbutton2 = button2;
-  pbutton3 = button3;
-  pbutton4 = button4;
+  pbutton1 = button1; pbutton2 = button2; pbutton3 = button3; pbutton4 = button4;
 
   debouncerRed.update();
   debouncerBlue.update();
@@ -556,75 +400,27 @@ void loop() {
 
   tapb = digitalRead(tap_pin);
 
-  if (button1 == 0 && pbutton1 == 1) {
-    bf1 = 1;
-  }
-  else {
-    bf1 = 0;
-  }
-  if (button2 == 0 && pbutton2 == 1) {
-    bf2 = 1;
-  }
-  else {
-    bf2 = 0;
-  }
+  bf1 = (button1 == 0 && pbutton1 == 1);
+  bf2 = (button2 == 0 && pbutton2 == 1);
+  bf3 = (button3 == 0 && pbutton3 == 1);
+  bf4 = (button4 == 0 && pbutton4 == 1);
 
-  if (button3 == 0 && pbutton3 == 1) {
-    bf3 = 1;
-  }
-  else {
-    bf3 = 0;
-  }
-  if (button4 == 0 && pbutton4 == 1) {
-    bf4 = 1;
-  }
-  else {
-    bf4 = 0;
-  }
-  if (tapb == 0 && ptapb == 1 && bft_latch == 0) {
-    bft = 1;
-    bft_latch = 1;
-  }
-  else {
-    bft = 0;
-    bft_latch = 0;
-  }
+  if (tapb == 0 && ptapb == 1 && bft_latch == 0) { bft = 1; bft_latch = 1; }
+  else { bft = 0; bft_latch = 0; }
 
-  if (midi_note_check == 67) {
-    play++;
-    play %= 2;
-  }
+  if (midi_note_check == 67) { play++; play %= 2; }
+  if (midi_note_check == 69) { playmode++; playmode %= 2; }
+  if (midi_note_check == 70) { midinoise = 1; shift_latch = 1; noise_mode++; noise_mode %= 2; }
 
-  if (midi_note_check == 69) {
-    playmode++;
-    playmode %= 2;
-  }
-
-  if (midi_note_check == 70) {
-    midinoise = 1;
-    shift_latch = 1;
-    noise_mode++;
-    noise_mode %= 2;
-  }
-
-  if (midi_note_check == 72) {
-    banko = 0; //blue
-  }
-  if (midi_note_check == 74) {
-    banko = 31; // yellow
-  }
-  if (midi_note_check == 76) {
-    banko = 63; //red
-  }
-  if (midi_note_check == 77) {
-    banko = 95; //green
-  }
+  if (midi_note_check == 72) banko = 0;
+  if (midi_note_check == 74) banko = 31;
+  if (midi_note_check == 76) banko = 63;
+  if (midi_note_check == 77) banko = 95;
 
   ptapb = tapb;
   pmiditap = miditap;
   pmidistep = midistep;
 
-  LEDS();
   BUTTONS();
   RECORD();
 
@@ -634,34 +430,28 @@ void loop() {
   log2 = raw2 * raw2;
 
   if (noise_mode == 0) {
-    pot1 = (log1 >> 11) + 2;//simple way of getting an exonential range from the linear pot
+    // exponential-ish curve from linear pot
+    pot1 = (log1 >> 11) + 2;
     pot2 = (log2 >> 11) + 42;
-  }
-
-  if (noise_mode == 1) {
-
+  } else {
     if (shift_latch == 0) {
       pot1 = (log1 >> 11) + 1;
       pot2 = (log2 >> 12) + 1;
-    }
-    if (shift_latch == 1) {
+    } else {
       pot3 = (log1 >> 6) + 1;
       pot4 = (log2 >> 8) + 1;
     }
   }
-
 }
 
-
-//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// ---------------------------------------------------------------------------
 
 void RECORD() {
   pplaybutton = playbutton;
   playbutton = digitalRead(play_pin);
-  if (pplaybutton == 1 && playbutton == 0 && shift == 1 && recordbutton == 1 ) {
+  if (pplaybutton == 1 && playbutton == 0 && shift == 1 && recordbutton == 1) {
     play = !play;
   }
-
 
   precordbutton = recordbutton;
   recordbutton = digitalRead(rec_pin);
@@ -675,25 +465,18 @@ void RECORD() {
     erase_latch = 0;
   }
 
+  if (play == 0) record = 0;
 
-  if (play == 0) {
-    record = 0;
-  }
-
-
-  ////////////////////////////////////////////////////////////////////erase
-
+  // Hold REC + PLAY to erase current bank
   if (recordbutton == 0) {
-    if (playbutton == 0 &&  erase_latch == 1) {
+    if (playbutton == 0 && erase_latch == 1) {
       eee++;
       if (eee >= 800) {
         eee = 0;
         erase_latch = 0;
-        erase = 1;
-        erase_led = millis();
         play = 1;
         record = 0;
-        for (byte j; j < 32; j++) {
+        for (byte j = 0; j < 32; j++) {
           B1_sequence[j + banko] = 0;
           B2_sequence[j + banko] = 0;
           B4_sequence[j + banko] = 0;
@@ -703,212 +486,101 @@ void RECORD() {
     }
   }
 
-  if (millis() - erase_led > 10000) {
-    erase = 0;
-  }
-
-
-  if (record == 1)
-  {
+  if (record == 1) {
     if (B1_trigger == 1) {
       B1_sequence[loopstepf + banko] = 1;
       B1_freq_sequence[loopstepf + banko] = pot1;
-
     }
-
     if (B2_trigger == 1) {
       B2_sequence[loopstepf + banko] = 1;
-      B2_freq_sequence[loopstepf + banko] = (pot2);
+      B2_freq_sequence[loopstepf + banko] = pot2;
     }
-
     if (B4_trigger == 1) {
       B4_sequence[loopstepf + banko] = 1;
     }
-
     if (B3_trigger == 1) {
       B3_sequence[loopstepf + banko] = 1;
     }
-
-
   }
 }
 
-//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-void LEDS() {
-
- preveigth = eigth;
-
-}
-
-//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
+// ---------------------------------------------------------------------------
 
 void BUTTONS() {
   prevshift = shift;
-
   shift = digitalRead(shift_pin);
 
   if (shift == 0 && prevshift == 1) {
-    shift_latch++;
-    shift_latch %= 2;
+    shift_latch++; shift_latch %= 2;
     shift_time = 0;
     shift_time_latch = 1;
   }
 
   if (shift == 0 && tapb == 1 && shift_time_latch == 1) {
     shift_time++;
-    if (shift_time > 800 ) {
+    if (shift_time > 800) {
       click_en = !click_en;
       shift_time = 0;
       shift_time_latch = 0;
     }
   }
-  ///////////////////////////////////////////////////sequence select
 
+  // sequence bank select & tempo when holding SHIFT
   if (shift == 0 && recordbutton == 1) {
     prevpot2 = pot2;
-    if (button1 == 0 ) { //red
-      banko = 63;
-
-    }
-    if (button4 == 0) { //yellow
-      banko = 31;
-    }
-    if (button2 == 0 || banko == 0) { //blue
-      banko = 0;
-    }
-    if (button3 == 0) { //green
-      banko = 95;
-    }
-
+    if (button1 == 0) banko = 63;
+    if (button4 == 0) banko = 31;
+    if (button2 == 0 || banko == 0) banko = 0;
+    if (button3 == 0) banko = 95;
 
     if (tapb == 0) {
       play = 1;
-      ratepot = (analogRead(1));
+      ratepot = analogRead(1);
       taptempo = ((ratepot - 1024) * -1) << 2;
     }
 
     revbutton = digitalRead(play_pin);
     if (revbutton == 0 && prevrevbutton == 1) {
-      playmode++;
-      playmode %= 2;
-
+      playmode++; playmode %= 2;
     }
     prevrevbutton = revbutton;
   }
 
-  if ( banko == 63) {//red
-
-    bankpr = 5;
-    bankpg = 0;
-    bankpb = 0;
-  }
-  if ( banko == 31) { //green!
-    bankpr = 0;
-    bankpg = 8;
-    bankpb = 0;
-  }
-  if ( banko == 0) {//blue
-    bankpr = 0;
-    bankpg = 0;
-    bankpb = 9;
-  }
-
-  if ( banko == 95) {
-    bankpr = 6;
-    bankpg = 8;
-    bankpb = 0;
-
-  }
-
-
+  // Triggers (when not holding SHIFT)
   if (shift == 1) {
-    //       if (bf1==1){
-
-    if (bf1 == 1 || midi_note_check == 60) {
-      B1_trigger = 1;
-    }
-    else {
-      B1_trigger = 0;
-    }
-    //    if (bf4==1){
-
-    if (bf4 == 1 || midi_note_check == 65) {
-      B4_trigger = 1;
-    }
-    else {
-      B4_trigger = 0;
-    }
-    //    if (bf2==1){
-
-    if (bf2 == 1 || midi_note_check == 62) {
-      B2_trigger = 1;
-    }
-    else {
-      B2_trigger = 0;
-    }
-    //   if (bf3==1){
-    if (bf3 == 1 || midi_note_check == 64) {
-      B3_trigger = 1;
-    }
-    else {
-      B3_trigger = 0;
-    }
-
+    B1_trigger = (bf1 == 1 || midi_note_check == 60);
+    B4_trigger = (bf4 == 1 || midi_note_check == 65);
+    B2_trigger = (bf2 == 1 || midi_note_check == 62);
+    B3_trigger = (bf3 == 1 || midi_note_check == 64);
   }
-
-
-
-  ////////////////////////////////////////////
-
 }
 
-int midi_note_on() {
+// ---------------------------------------------------------------------------
 
+int midi_note_on() {
   int type, note, velocity, channel, d1, d2;
   byte r = MIDI.read();
-  if (r == 1) {                  // Is there a MIDI message incoming ?
+  if (r == 1) {
     byte type = MIDI.getType();
     switch (type) {
-      case 0x90: //note on. For some reasong "NoteOn" won't work enven though it's declared in midi_Defs.h
+      case 0x90: // note on
         note = MIDI.getData1();
         velocity = MIDI.getData2();
-        if (velocity == 0) {
-          note = 0;
-        }
-
+        if (velocity == 0) note = 0;
         break;
-      case 0x80: //note off
+      case 0x80: // note off
         note = 0;
         break;
-
-      case 0xB0: //control change
-        if (MIDI.getData1() == 70) {
-          midicc1 = (MIDI.getData2() << 2) + 3;
-        }
-
-        if (MIDI.getData1() == 71) {
-          midicc2 = (MIDI.getData2() << 2) + 3;
-        }
-
-        if (MIDI.getData1() == 72) {
-          midicc3 = (MIDI.getData2() << 2);
-        }
-
-        if (MIDI.getData1() == 73) {
-          midicc4 = (MIDI.getData2() << 2);
-        }
-
+      case 0xB0: // CC
+        if (MIDI.getData1() == 70) midicc1 = (MIDI.getData2() << 2) + 3;
+        if (MIDI.getData1() == 71) midicc2 = (MIDI.getData2() << 2) + 3;
+        if (MIDI.getData1() == 72) midicc3 = (MIDI.getData2() << 2);
+        if (MIDI.getData1() == 73) midicc4 = (MIDI.getData2() << 2);
       default:
         note = 0;
-
     }
-  }
-
-  else {
+  } else {
     note = 0;
   }
-
   return note;
 }
