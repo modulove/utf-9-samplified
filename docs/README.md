@@ -1,6 +1,6 @@
 # UTF-9 Drum Computer — Enhanced Features & Documentation  
 
-This document describes the **full feature set, workflows, MIDI handling, and wiring** of the UTF-9 drum computer firmware.  
+This document describes the **full feature set, workflows, MIDI handling of the UTF-9 drum computer firmware.  
 
 ---
 
