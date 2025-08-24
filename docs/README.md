@@ -4,13 +4,11 @@ This document describes the **full feature set, workflows, MIDI handling, and wi
 
 ---
 
-## ✨ Improvements in this Firmware  
+## ✨ Improvements in this Firmware  (code)
 
 - **Data type optimization** → leaner and faster code  
 - **Simplified structure** → easier to read & hack  
-- **Memory savings** → leaves more room for features  
 - **Save/Load system** → intuitive and live-ready  
-- **Better workflow** → reverse mode, global tempo, auto-load  
 
 ---
 
@@ -19,17 +17,8 @@ This document describes the **full feature set, workflows, MIDI handling, and wi
 ```
 SHIFT + [1-4]          → LOAD pattern from slot
 SHIFT + REC + [1-4]    → SAVE pattern to slot
-SHIFT + PLAY           → REVERSE mode
 ```
 
-
----
-
-## 🧩 Mode Features  
-
-- **Global Tempo** → one BPM for everything (no tempo changes for now)  
-- **Metronome OFF in saves** → no unwanted clicks  
-- **Auto-Load on Boot** → last saved bank & settings restored at power-up  
 
 ---
 
@@ -97,12 +86,11 @@ So your drum computer doubles as a **MIDI-to-CV clock bridge** when idle!
 
 ## 🔑 Key Features  
 
-✔️ 4-Track step sequencer with save/load workflow  
-✔️ Reverse mode for instant twists  
-✔️ Global tempo & auto-load  
-✔️ MIDI channel select via boot buttons  
-✔️ Modular-ready clock output  
-✔️ Optimized, Nano-friendly code  
-✔️ **Proven beginner-friendly hardware** 
+✔️ 4-Track step sequencer  
+✔️ Reverse mode
+✔️ MIDI channel select via buttons on boot
+✔️ Modular-ready clock output  (TRS-Midi input)
+✔️ Clock generator
+✔️ **Proven beginner-friendly DIY hardware** 
 
 ---
