@@ -1,6 +1,6 @@
 # UTF-9 Drum Computer — Enhanced Features & Documentation  
 
-This document describes the **full feature set, workflows, MIDI handling of the UTF-9 drum computer firmware.  
+The features of the UTF-9 drum computer firmware
 
 ---
 
@@ -19,13 +19,6 @@ SHIFT + [1-4]          → LOAD pattern from slot
 SHIFT + REC + [1-4]    → SAVE pattern to slot
 ```
 
-
----
-
-## 🚀 Example Workflow  
-
-
-Perform by jumping between slots instantly:  
 
 ---
 
