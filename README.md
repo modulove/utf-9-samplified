@@ -44,6 +44,16 @@ Find the ibom here:
 
 ---
 
+## Links
+
+The original Bleep Drum 
+[https://bleeplabs.com/product/the-bleep-drum/](https://bleeplabs.com/product/the-bleep-drum/).
+
+Old Bleep Drum User Guide & Hacking Info
+[https://bleeplabs.com/bleep-drum-user-guide/](https://bleeplabs.com/bleep-drum-user-guide/).
+
+---
+
 ## 💜 Thank You
 
 
