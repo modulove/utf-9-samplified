@@ -1,11 +1,49 @@
-# utf-9-samplified
+# UTF-9-samplified Drum Computer  
 
-This is WGD Modulars new take on the [bleep drum](https://bleeplabs.com/product/the-bleep-drum/) using an arduino nano. The bleep drum was a rad-fi drum machine designed by Dr. Bleep.
+This project is based on the [bleep drum](https://bleeplabs.com/product/the-bleep-drum/) design by Dr. Bleep.  
+In 2025, **Felix Wiegeand (wgdmodular)** picked it up and released this **utf-9-samplified drum machine clone** with nice upgrades that make it perfect for starters and pros.
 
-We've been building these with dozens of participantsin our DIY Synth workshops. These are good fun and easy to build for beginners, offer a goof value.
+We (Modulove) put these into the hands of **beginners at DIY synthesizer solder workshops in 2025**.
 
-Since we started the Workshops in 2025, we have made a few modifications.
+- Few dozens were built.
+- Every single one worked :)
+- All were **hand-soldered by beginners (even kids!)**.
 
-The BOM can now be found in the docs/ folder as well as a README with explanation of the changes (in firmware).
+It turned out to be a **perfect entry-level project**. 
 
-...
+The new firmware adds **Additonal functionality, fixes, and performance tricks** that came out of those builds and feedback from users.
+
+---
+
+## Firmware Updates
+
+**Stable firmware (recommended):**  
+Fixes the **button confusion issue**, fixed bad button behavior, small optimizations.  
+[https://dl.modulove.de/module/utf9/](https://dl.modulove.de/module/utf9/)  
+
+**Beta firmware (optional):**  
+Adds the new features: save/load slots, MIDI-to-CV clock, and more.  
+[https://dl.modulove.de/module/utf9/beta.html](https://dl.modulove.de/module/utf9/beta.html)  
+
+Flash tool & instructions: [https://dl.modulove.de/module/utf9/](https://dl.modulove.de/module/utf9/)  
+
+---
+
+## Documentation
+
+Docs of the **new features** here:  
+
+[docs/README.md](./docs/README.md)
+
+The BOM is the docs/ folder as well.
+[docs/BOM.md](./docs/BOM.md)
+
+---
+
+## 💜 Thank You
+
+
+Thanks for building with us 
+And huge thank yoouu to Felix from WGD Modular & John-Mike Reed aka Dr. Bleep who has been designing the initial Bleep Drum.
+
+Linus & the Modulove workshop team
