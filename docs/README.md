@@ -29,7 +29,6 @@ SHIFT + REC + [1-4]    → SAVE pattern to slot
 | **Trigger sounds** | Buttons 1-4 |
 | **Load pattern** | SHIFT + Button 1-4 |
 | **Save pattern** | SHIFT + REC → Button 1-4 |
-| **Switch banks** | SHIFT + TAP + Button 1-4 |
 | **Reverse mode** | SHIFT + PLAY |
 | **MIDI channel select (on boot)** | Hold binary button combo |
 
