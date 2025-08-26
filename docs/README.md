@@ -1,10 +1,10 @@
 # UTF-9 Drum Computer — Enhanced Features & Documentation  
 
-The features of the UTF-9 drum computer firmware
+The features of the new UTF-9 drum computer firmware
 
 ---
 
-## ✨ Improvements in this Firmware  (code)
+## Improvements in this Firmware  (code)
 
 - **Data type optimization** → leaner and faster code  
 - **Simplified structure** → easier to read & hack  
@@ -12,7 +12,7 @@ The features of the UTF-9 drum computer firmware
 
 ---
 
-## 💾 Save / Load System  
+## Save / Load System  
 
 ```
 SHIFT + [1-4]          → LOAD pattern from slot
@@ -22,7 +22,7 @@ SHIFT + REC + [1-4]    → SAVE pattern to slot
 
 ---
 
-## 🕹️ Complete Control Summary  
+## Complete Control Summary  
 
 | Action | Keys |
 |--------|------|
@@ -34,14 +34,14 @@ SHIFT + REC + [1-4]    → SAVE pattern to slot
 
 ---
 
-## 🎹 MIDI Channel Selection  
+## MIDI Channel Selection  
 
 On boot, hold button combos to select MIDI channel **1–16**.  
 Channel is saved to **EEPROM** and remembered!  
 
 ---
 
-## ⏱️ MIDI Clock → Modular Converter  
+## MIDI Clock → Modular Converter  
 
 ```
 Sequencer Playing → Pin 12 = Internal Clock
@@ -76,7 +76,7 @@ So your drum computer doubles as a **MIDI-to-CV clock bridge** when idle!
 
 ---
 
-## 🔑 Key Features  
+## Key Features  
 
 ✔️ 4-Track step sequencer  
 ✔️ Reverse mode
