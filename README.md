@@ -58,6 +58,6 @@ Old Bleep Drum User Guide & Hacking Info
 
 
 Thanks for building with us
-And huge thank yoouu to Felix from WGD Modular & John-Mike Reed aka Dr. Bleep who has been designing the initial Bleep Drum.
+and huge thank yoouu to Felix from WGD Modular & John-Mike Reed aka Dr. Bleep who has been designing the initial Bleep Drum.
 
 Linus & the Modulove workshop team
