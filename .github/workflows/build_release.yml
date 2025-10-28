@@ -15,12 +15,14 @@ jobs:
     strategy:
       matrix:
         drumkit: [standard, 808, 909, hiphop, industrial, experimental]
-        board: [nano, nanoOldBootloader]
+        board: [nano, nano:cpu=atmega328old]
         include:
           - board: nano
             boardpath: nano
-          - board: nanoOldBootloader
+            boardname: nano
+          - board: nano:cpu=atmega328old
             boardpath: nanoOldBootloader
+            boardname: nano (Old Bootloader)
 
     steps:
       - uses: actions/checkout@v4
@@ -40,7 +42,7 @@ jobs:
           arduino-cli lib install "MIDI Library"
           arduino-cli lib install Bounce2
 
-      - name: Compile firmware for ${{ matrix.drumkit }} - ${{ matrix.board }}
+      - name: Compile firmware for ${{ matrix.drumkit }} - ${{ matrix.boardname }}
         run: |
           SKETCH_DIR="firmware/${{ matrix.drumkit }}"
 
