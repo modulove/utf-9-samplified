@@ -6,6 +6,29 @@
    Updated version for 2025 WGD Modular UTF-9 rerelease
    OPTIMIZED VERSION with EEPROM Save/Load
    
+   == MIDI CLOCK TO MODULAR ==
+   The clock output (pin 12) has dual functionality:
+   - When playing (play=1): Outputs internal sequencer clock
+   - When stopped (play=0): Converts incoming MIDI clock to modular clock
+   
+   This allows the Bleep Drum to act as a MIDI-to-CV clock converter
+   when not running its internal sequencer. Perfect for syncing
+   your modular system to a DAW or other MIDI clock source.
+   
+   Clock divider can be set in code (MIDI_CLOCK_DIVIDER):
+   - 1 = 24ppqn (every MIDI clock tick)
+   - 2 = 12ppqn (every 2nd tick) 
+   - 3 = 8th note triplets (8ppqn)
+   - 4 = 16th notes (6ppqn)
+   - 6 = 8th notes (4ppqn) [DEFAULT]
+   - 8 = 8th note dots (3ppqn)
+   - 12 = Quarter notes (2ppqn)
+   - 24 = Half notes (1ppqn)
+   - 48 = Whole notes (0.5ppqn)
+   
+   MIDI Start/Stop can optionally control sequencer:
+   Set MIDI_AUTO_START to 1 in code to enable auto start/stop
+   
    == MIDI CHANNEL SELECTION (on boot) ==
    Hold buttons during power-on to select MIDI channel:
    No buttons = Channel 1
@@ -57,6 +80,7 @@
    Note 69: Toggle reverse
    Note 70: Toggle noise mode
    CC 70-73: Control parameters
+   MIDI Clock: Converted to modular clock when stopped
 */
 
 #include <MIDI.h>
@@ -108,11 +132,15 @@ Bounce debouncerYellow = Bounce();
 #define tap_pin   18
 #define shift_pin 17
 
+// MIDI Clock Settings
+#define MIDI_CLOCK_DIVIDER 6    // 24 PPQN to 4 PPQN (6:1 ratio)
+#define MIDI_AUTO_START 1       // 1=Auto start/stop with MIDI, 0=Manual only
+
 uint32_t cm;
 const unsigned long dds_tune = 4294967296 / 9800;  // 2^32 / measured dds freq
 
-// variables
-int sample_holder1;
+// Optimized variables - keeping audio-critical ones as int
+int sample_holder1;  // Keep as int for audio quality
 uint16_t eee;
 byte erase_latch, shift, banko = 0;
 uint16_t pot1, pot2, pot3 = 200, pot4 = 200;
@@ -126,10 +154,10 @@ byte B2_sequence[128];
 byte B3_sequence[128];
 byte B1_sequence[128];
 byte B4_sequence[128];
-int B2_freq_sequence[128];
-int B1_freq_sequence[128];
+int B2_freq_sequence[128];  // KEEP AS INT for audio quality
+int B1_freq_sequence[128];  // KEEP AS INT for audio quality
 
-int kf, pf, kfe;
+int kf, pf, kfe;  // KEEP AS INT for proper frequency
 uint16_t index, index2, index3, index4, index5;
 uint16_t index_freq_1, index_freq_2;
 uint16_t indexr, index2r, index3r, index4r, index2vr, index4vr;
@@ -161,9 +189,9 @@ byte prevshift, shift_latch;
 byte t;
 uint16_t tapbank[2];  // Reduced from 4 to 2
 uint16_t recordoffsettimer, offsetamount, taptempof;
-int click_pitch;
+int click_pitch;  // Use int for proper pitch values
 byte click_amp, click_wait;
-int sample_out_temp;
+int sample_out_temp;  // Keep as int for proper audio mixing
 byte sample_out;
 uint32_t dds_time;
 byte bft_latch;
@@ -173,10 +201,25 @@ byte click_play, click_en = 1;
 uint16_t shift_time;
 byte shift_time_latch;
 
+// MIDI Clock to Modular Clock Configuration
+// MIDI sends 24 clocks per quarter note (24ppqn)
+// Change this value to set clock division when sequencer is stopped:
+// 1 = 24ppqn (every tick), 3 = 8ppqn (triplets), 6 = 4ppqn (8th notes)
+// 12 = 2ppqn (quarter notes), 24 = 1ppqn (half notes), etc.
+#define MIDI_CLOCK_DIVIDER 6  // Default: 8th notes (4 pulses per quarter note)
+
+// Set to 1 to enable auto start/stop with MIDI Start/Stop messages
+#define MIDI_AUTO_START 0  // 0=disabled, 1=enabled
+
 // Save/Load
 byte save_mode = 0;  // 0=off, 1=waiting for button
 byte last_saved_slot = 0;  // Remember which slot was last saved
 byte midi_channel = 1;  // MIDI channel 1-16
+
+// MIDI Clock to Modular Clock
+byte midi_clock_counter = 0;
+uint32_t midi_clock_out_time = 0;
+byte midi_clock_out_latch = 0;
 
 // Function declarations
 void handleSaveLoad();
@@ -332,7 +375,10 @@ ISR(TIMER2_COMPA_vect) {
 
   taptempof = taptempo;
   recordoffsettimer = dds_time - prev;
-  offsetamount = taptempof - (taptempof >> 2);
+  //offsetamount = taptempof - (taptempof >> 2);
+  offsetamount = taptempof >> 1;  // 50% threshold (divide by 2)
+
+
 
   if (recordoffsettimer > offsetamount) {
     loopstepf = loopstep + 1;
@@ -525,7 +571,11 @@ void loop() {
   else { bft = 0; bft_latch = 0; }
 
   // MIDI controls
-  if (midi_note_check == 67) play = !play;
+  if (midi_note_check == 67) {
+    play = !play;
+    midi_clock_counter = 0;  // Reset MIDI clock counter
+    digitalWrite(12, LOW);
+  }
   if (midi_note_check == 69) playmode = !playmode;
   if (midi_note_check == 70) { shift_latch = 1; noise_mode = !noise_mode; }
   
@@ -567,6 +617,8 @@ void RECORD() {
   playbutton = digitalRead(play_pin);
   if (pplaybutton == 1 && playbutton == 0 && shift == 1 && recordbutton == 1) {
     play = !play;
+    midi_clock_counter = 0;
+    digitalWrite(12, LOW);
   }
 
   precordbutton = recordbutton;
@@ -600,16 +652,23 @@ void RECORD() {
   }
 
   if (record == 1) {
+    // FIX: Capture loopstepf atomically to prevent race condition
+    byte record_step;
+    cli();  // Disable interrupts
+    record_step = loopstepf;
+    sei();  // Re-enable interrupts
+    
+    // Now use the captured value consistently
     if (B1_trigger) {
-      B1_sequence[loopstepf + banko] = 1;
-      B1_freq_sequence[loopstepf + banko] = pot1;  // Store full value
+      B1_sequence[record_step + banko] = 1;
+      B1_freq_sequence[record_step + banko] = pot1;
     }
     if (B2_trigger) {
-      B2_sequence[loopstepf + banko] = 1;
-      B2_freq_sequence[loopstepf + banko] = pot2;  // Store full value
+      B2_sequence[record_step + banko] = 1;
+      B2_freq_sequence[record_step + banko] = pot2;
     }
-    if (B4_trigger) B4_sequence[loopstepf + banko] = 1;
-    if (B3_trigger) B3_sequence[loopstepf + banko] = 1;
+    if (B4_trigger) B4_sequence[record_step + banko] = 1;
+    if (B3_trigger) B3_sequence[record_step + banko] = 1;
   }
 }
 
@@ -844,16 +903,55 @@ byte checkEEPROM() {
 byte midi_note_on() {
   byte note = 0;
   if (MIDI.read()) {
-    // Check if message is on our selected channel
+    byte type = MIDI.getType();
+    
+    // Handle MIDI System Realtime messages first (they don't have channels)
+    // These work regardless of selected MIDI channel
+    if (type >= 0xF8) {  // System Realtime messages (0xF8-0xFF)
+      if (type == 0xF8) {  // MIDI Clock tick
+        if (play == 0) {  // Only process clock when sequencer is stopped
+          midi_clock_counter++;
+          if (midi_clock_counter >= MIDI_CLOCK_DIVIDER) {
+            midi_clock_counter = 0;
+            // Output clock pulse
+            digitalWrite(12, HIGH);
+            midi_clock_out_time = dds_time;
+            midi_clock_out_latch = 1;
+          }
+        }
+      }
+      else if (type == 0xFA) {  // MIDI Start
+        midi_clock_counter = 0;
+        #if MIDI_AUTO_START == 1
+        play = 1;  // Auto-start sequencer on MIDI Start
+        #endif
+      }
+      else if (type == 0xFC) {  // MIDI Stop
+        midi_clock_counter = 0;
+        digitalWrite(12, LOW);
+        #if MIDI_AUTO_START == 1
+        play = 0;  // Auto-stop sequencer on MIDI Stop
+        #endif
+      }
+      else if (type == 0xFB) {  // MIDI Continue
+        // Continue from where we left off
+        #if MIDI_AUTO_START == 1
+        play = 1;  // Auto-continue sequencer
+        #endif
+      }
+      return 0;  // System messages don't return notes
+    }
+    
+    // For channel messages, check if it's on our selected channel
     if (MIDI.getChannel() != midi_channel) return 0;
     
-    byte type = MIDI.getType();
-    if (type == 0x90) {
+    // Handle channel-specific messages
+    if (type == 0x90) {  // Note On
       note = MIDI.getData1();
-      if (MIDI.getData2() == 0) note = 0;
-    } else if (type == 0x80) {
+      if (MIDI.getData2() == 0) note = 0;  // Velocity 0 = Note Off
+    } else if (type == 0x80) {  // Note Off
       note = 0;
-    } else if (type == 0xB0) {
+    } else if (type == 0xB0) {  // Control Change
       byte cc = MIDI.getData1();
       byte val = MIDI.getData2();
       if (cc == 70) midicc1 = (val << 2) + 3;
