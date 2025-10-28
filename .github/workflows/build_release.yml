@@ -36,7 +36,8 @@ jobs:
           arduino-cli core install arduino:avr
 
           # Install required libraries
-          arduino-cli lib install MIDI
+          # MIDI library from FortySevenEffects
+          arduino-cli lib install "MIDI Library"
           arduino-cli lib install Bounce2
 
       - name: Compile firmware for ${{ matrix.drumkit }} - ${{ matrix.board }}
