@@ -1,0 +1,68 @@
+name: Build and Release UTF-9-SAMPLIFIED Firmware
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  release:
+    types: [created]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        drumkit: [standard, 808, 909, hiphop, industrial, experimental]
+        board: [nano, nanoOldBootloader]
+        include:
+          - board: nano
+            boardpath: nano
+          - board: nanoOldBootloader
+            boardpath: nanoOldBootloader
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Arduino CLI
+        uses: arduino/setup-arduino-cli@v1
+
+      - name: Install Arduino platform and libraries
+        run: |
+          arduino-cli config init
+          arduino-cli config set library.enable_unsafe_install true
+          arduino-cli core update-index
+          arduino-cli core install arduino:avr
+
+          # Install required libraries
+          arduino-cli lib install MIDI
+          arduino-cli lib install Bounce2
+
+      - name: Compile firmware for ${{ matrix.drumkit }} - ${{ matrix.board }}
+        run: |
+          SKETCH_DIR="firmware/${{ matrix.drumkit }}"
+
+          # Compile the sketch
+          arduino-cli compile -v -b arduino:avr:${{ matrix.board }} "${SKETCH_DIR}" -e --output-dir=./build/${{ matrix.boardpath }}
+
+          # Create release directory
+          mkdir -p ./release
+
+          # Copy hex file with descriptive name
+          cp "./build/${{ matrix.boardpath }}/${{ matrix.drumkit }}.ino.hex" "./release/UTF9_${{ matrix.drumkit }}.${{ matrix.boardpath }}.hex"
+
+      - name: Upload firmware artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: UTF9_${{ matrix.drumkit }}.${{ matrix.boardpath }}
+          path: ./release/*.hex
+          retention-days: 90
+
+      - name: Upload firmware to release
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v1
+        with:
+          files: ./release/*.hex
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
