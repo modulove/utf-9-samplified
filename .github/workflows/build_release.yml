@@ -13,16 +13,33 @@ jobs:
     runs-on: ubuntu-latest
 
     strategy:
+      fail-fast: false
       matrix:
         drumkit: [standard, 808, 909, hiphop, industrial, experimental]
-        board: [nano, nano:cpu=atmega328old]
+        # Full FQBNs, so a non-arduino vendor (lgt8fx) can sit in the same matrix.
+        # clock_div=2 runs the LGT8F328P's internal 32 MHz RC at 16 MHz, matching
+        # the Nano - the sketch derives OCR2A from F_CPU either way, but running
+        # at 16 MHz also keeps the loop-counted button hold times identical.
+        board:
+          - arduino:avr:nano
+          - arduino:avr:nano:cpu=atmega328old
+          - lgt8fx:avr:328:clock_div=2
         include:
-          - board: nano
+          - board: arduino:avr:nano
             boardpath: nano
-            boardname: nano
-          - board: nano:cpu=atmega328old
+            boardname: Nano
+          - board: arduino:avr:nano:cpu=atmega328old
             boardpath: nanoOldBootloader
-            boardname: nano (Old Bootloader)
+            boardname: Nano (Old Bootloader)
+          - board: lgt8fx:avr:328:clock_div=2
+            boardpath: lgt8f328p
+            boardname: LGT8F328P
+        exclude:
+          # The LGT8F bootloader reserves 3 KB, leaving 29696 bytes against the
+          # Nano's 30720. The standard kit's sample set builds to 30658, so it
+          # is the one drumkit that cannot fit - it stays Nano-only.
+          - drumkit: standard
+            board: lgt8fx:avr:328:clock_div=2
 
     steps:
       - uses: actions/checkout@v4
@@ -42,12 +59,19 @@ jobs:
           arduino-cli lib install "MIDI Library"
           arduino-cli lib install Bounce2
 
+      - name: Install LGT8F328P platform
+        if: startsWith(matrix.board, 'lgt8fx:')
+        run: |
+          arduino-cli config add board_manager.additional_urls https://raw.githubusercontent.com/dbuezas/lgt8fx/master/package_lgt8fx_index.json
+          arduino-cli core update-index
+          arduino-cli core install lgt8fx:avr@2.0.7
+
       - name: Compile firmware for ${{ matrix.drumkit }} - ${{ matrix.boardname }}
         run: |
           SKETCH_DIR="firmware/${{ matrix.drumkit }}"
 
           # Compile the sketch
-          arduino-cli compile -v -b arduino:avr:${{ matrix.board }} "${SKETCH_DIR}" -e --output-dir=./build/${{ matrix.boardpath }}
+          arduino-cli compile -v -b ${{ matrix.board }} "${SKETCH_DIR}" -e --output-dir=./build/${{ matrix.boardpath }}
 
           # Create release directory
           mkdir -p ./release

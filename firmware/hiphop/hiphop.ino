@@ -137,6 +137,31 @@ Bounce debouncerYellow = Bounce();
 #define MIDI_AUTO_START 1       // 1=Auto start/stop with MIDI, 0=Manual only
 
 uint32_t cm;
+// ---------------------------------------------------------------------------
+// Dual platform: ATmega328P at 16 MHz and LGT8F328P at 32 MHz, one sketch.
+//
+// The only thing that really has to change is the sample clock.  OCR2A was
+// hardcoded to 50, which is 9803.9 Hz only at 16 MHz - on a 32 MHz LGT8F the
+// same value runs the ISR at 19.6 kHz, so every sample plays an octave up and
+// the sequencer runs at double tempo.  Deriving it from F_CPU gives 50 on the
+// ATmega and 101 on the LGT8F, and the same 9803.9 Hz on both, which also
+// keeps dds_tune below correct.
+//
+// The other difference is EEPROM: an LGT8F has none, and the core emulates it
+// in flash by page swapping where a single byte written erases and rewrites a
+// 1 KB page.  See eepromClearSlots() and saveToSlot().
+#if defined(__LGT8FX8P__)
+  #define IS_LGT8F 1
+#else
+  #define IS_LGT8F 0
+#endif
+
+#define DDS_HZ    9804UL
+// Rounded, not truncated: F_CPU/32/DDS_HZ alone gives 50 at 16 MHz where the
+// original used 51 ticks, and the two platforms then land on different rates
+// (10000 Hz vs 9901 Hz) - which is the whole thing this is meant to avoid.
+#define OCR2A_VAL ((uint8_t)(((F_CPU / 32UL + DDS_HZ / 2) / DDS_HZ) - 1))
+
 const unsigned long dds_tune = 4294967296 / 9800;  // 2^32 / measured dds freq
 
 // Optimized variables - keeping audio-critical ones as int
@@ -240,7 +265,11 @@ uint32_t acc_sine;
 uint32_t trig_out_time, prevtap;
 
 void setup() {
-  cli();
+  // No cli() here.  delay() and millis() are driven by Timer0's overflow
+  // interrupt, so holding interrupts off across the boot delays below stops
+  // them working - on a 16 MHz ATmega they limp, at 32 MHz they return early.
+  // Interrupts are turned off again around the timer setup further down, which
+  // is the only part that actually needs it.
 
   // Outputs
   pinMode(12, OUTPUT);
@@ -318,8 +347,9 @@ void setup() {
   SPI.setBitOrder(MSBFIRST);
 
   // Timer2 ISR
+  cli();                       // only the timer setup needs interrupts off
   TIMSK2 = (1 << OCIE2A);
-  OCR2A = 50;
+  OCR2A = OCR2A_VAL;
   TCCR2A = (1 << WGM21);
   TCCR2B = (1 << CS21) | (1 << CS20);
   TCCR0B = B0000001;
@@ -352,7 +382,7 @@ void setup() {
 
 ISR(TIMER2_COMPA_vect) {
   dds_time++;
-  OCR2A = 50;
+  OCR2A = OCR2A_VAL;
 
   prevloopstep = loopstep;
 
@@ -768,10 +798,40 @@ void flashConfirm() {
   play = p;
 }
 
+// A slot only ever holds 80 bytes: 16 packed step bytes then two 32-byte
+// frequency lanes.  The original cleared all 1008 bytes from EEPROM_BANK_START
+// to the top, which on an LGT8F is 1008 page erase-and-rewrites - several
+// seconds of stall and about a tenth of the flash's endurance, every time the
+// magic does not match.  And on an LGT8F the emulated EEPROM is wiped by every
+// sketch upload, so that is every upload.
+#define SLOT_BYTES 80
+void eepromClearSlots() {
+#if IS_LGT8F
+  uint8_t zero[SLOT_BYTES];
+  for (uint8_t i = 0; i < SLOT_BYTES; i++) zero[i] = 0;
+  for (uint8_t sl = 0; sl < 4; sl++)
+    lgt_eeprom_writeSWM(EEPROM_BANK_START + (uint16_t)sl * EEPROM_BANK_SIZE,
+                        (uint32_t *)zero, SLOT_BYTES / 4);
+#else
+  for (uint16_t i = EEPROM_BANK_START; i < 1024; i++) EEPROM.update(i, 0);
+#endif
+}
+
 void saveToSlot(byte slot) {
   if (slot > 3) return;
   
   uint16_t addr = EEPROM_BANK_START + (slot * EEPROM_BANK_SIZE);
+
+  // On the LGT8F the 80 bytes are staged and written as one page burst.
+  // On a real EEPROM they go straight out through update(), which already
+  // skips unchanged bytes - staging there would cost 80 bytes of RAM and
+  // ~100 of flash for no gain, and the standard kit has room for neither.
+#if IS_LGT8F
+  uint8_t buf[SLOT_BYTES];
+  #define SLOT_PUT(i, v) buf[i] = (v)
+#else
+  #define SLOT_PUT(i, v) EEPROM.update(addr + (i), (v))
+#endif
   
   // Save only the CURRENT 32-step pattern (based on banko)
   // Pack 2 steps into 1 byte (4 bits per step for 4 sequences)
@@ -789,20 +849,23 @@ void saveToSlot(byte slot) {
     if (B3_sequence[idx + 1]) packed |= 0x40;
     if (B4_sequence[idx + 1]) packed |= 0x80;
     
-    EEPROM.update(addr + i, packed);
+    SLOT_PUT(i, packed);
   }
   
   // Save B1 frequency sequences for current bank (32 values)
   for (byte i = 0; i < 32; i++) {
-    byte freq1 = constrain(B1_freq_sequence[i + banko] >> 2, 0, 255);
-    EEPROM.update(addr + 16 + i, freq1);
+    SLOT_PUT(16 + i, constrain(B1_freq_sequence[i + banko] >> 2, 0, 255));
   }
   
   // Save B2 frequency sequences for current bank (32 values)
   for (byte i = 0; i < 32; i++) {
-    byte freq2 = constrain(B2_freq_sequence[i + banko] >> 2, 0, 255);
-    EEPROM.update(addr + 48 + i, freq2);
+    SLOT_PUT(48 + i, constrain(B2_freq_sequence[i + banko] >> 2, 0, 255));
   }
+  
+#if IS_LGT8F
+  lgt_eeprom_writeSWM(addr, (uint32_t *)buf, SLOT_BYTES / 4);   // one page op, not 80
+#endif
+#undef SLOT_PUT
   
   // Save global settings (including current bank position)
   saveSettings();
@@ -891,10 +954,7 @@ byte checkEEPROM() {
     EEPROM.update(EEPROM_SETTINGS_ADDR, 0);  // Byte 2: Last slot = 0
     EEPROM.update(EEPROM_SETTINGS_ADDR + 3, 1);  // Byte 5: Default MIDI channel = 1
     saveSettings();
-    // Clear all save slots
-    for (uint16_t i = EEPROM_BANK_START; i < 1024; i++) {
-      EEPROM.update(i, 0);
-    }
+    eepromClearSlots();
     return 0;
   }
   return 1;

@@ -30,6 +30,32 @@ Flash tool & instructions: [https://dl.modulove.de/module/utf9/](https://dl.modu
 
 ---
 
+## Supported boards
+
+The firmware builds from a single sketch for three targets:
+
+| Board | Notes |
+|---|---|
+| Arduino Nano | ATmega328P, new bootloader (115200 baud) |
+| Arduino Nano (Old Bootloader) | ATmega328P, 57600 baud |
+| LGT8F328P | Nano clone, built at `clock_div=2` so the chip runs at 16 MHz |
+
+The LGT8F328P is an AVR-compatible clone whose internal RC oscillator runs at
+32 MHz. The build divides it to 16 MHz so every timing in the sketch matches
+the Nano, and the sample clock is derived from `F_CPU` rather than hardcoded,
+so it lands on 9803.9 Hz on both. The LGT8F has no real EEPROM - the core
+emulates it in flash, where writing one byte erases and rewrites a 1 KB page -
+so pattern saves are staged and written as a single burst there.
+
+None of this costs the Nano anything: the ATmega builds are byte-for-byte the
+same size as before the dual-platform change.
+
+**The Standard drumkit is Nano-only.** The LGT8F bootloader reserves 3 KB,
+leaving 29696 bytes against the Nano's 30720, and Standard's sample set builds
+to 30658. The other five kits all fit.
+
+---
+
 ## Documentation
 
 Docs of the **new features** here:
