@@ -264,6 +264,13 @@ byte index_sine;
 uint32_t acc_sine;
 uint32_t trig_out_time, prevtap;
 
+// Queued pattern load.  flashConfirm() blinks by toggling `play`, and the ISR
+// resets loopstep to 31 whenever play is 0 - so loading a slot used to stop
+// the sequencer, restart the bar and block the main loop for 480 ms.  A load
+// pressed while playing now waits for the last step of the bar instead.
+volatile byte bar_end = 0;      // ISR -> main: playhead entered the last step
+byte pending_slot = 255;        // 255 = nothing queued
+
 void setup() {
   // No cli() here.  delay() and millis() are driven by Timer0's overflow
   // interrupt, so holding interrupts off across the boot delays below stops
@@ -438,6 +445,7 @@ ISR(TIMER2_COMPA_vect) {
     digitalWrite(12, 1);
     trig_out_time = dds_time;
     trigger_out_latch = 1;
+    if (play == 1 && loopstep == 31) bar_end = 1;   // queued loads land here
   }
   if (dds_time - trig_out_time > 500 && trigger_out_latch == 1) {
     trigger_out_latch = 0;
@@ -758,6 +766,20 @@ void BUTTONS() {
 }
 
 void handleSaveLoad() {
+  // Serve a queued load.  Stopped, there is no groove to protect, so it happens
+  // at once with the old blink.  Playing, it waits for the last step of the bar:
+  // that step's triggers have already fired, so the new pattern starts cleanly
+  // at step 0 - no dropout, no restart.
+  if (pending_slot < 4) {
+    byte go = 1;
+    if (play == 1) { cli(); go = bar_end; bar_end = 0; sei(); }
+    if (go) {
+      loadFromSlot(pending_slot);
+      pending_slot = 255;
+      if (play == 0) flashConfirm();
+    }
+  }
+
   // SHIFT + REC = Enter save mode (saves current bank pattern)
   if (shift == 0 && recordbutton == 0 && playbutton == 1) {
     save_mode = 1;
@@ -773,19 +795,31 @@ void handleSaveLoad() {
   }
   
   // Direct load: SHIFT + Button (no PLAY needed)
-  if (shift == 0 && recordbutton == 1 && playbutton == 1) {
-    if (bf1) { loadFromSlot(0); flashConfirm(); }
-    if (bf2) { loadFromSlot(1); flashConfirm(); }
-    if (bf3) { loadFromSlot(2); flashConfirm(); }
-    if (bf4) { loadFromSlot(3); flashConfirm(); }
+  // tapb == 1 (TAP not held) matters: SHIFT+TAP+button is the bank selector,
+  // and without this test that combo also loaded a slot - so switching bank
+  // quietly overwrote the pattern you had just switched to.
+  if (shift == 0 && recordbutton == 1 && playbutton == 1 && tapb == 1) {
+    byte want = 255;
+    if (bf1) want = 0;
+    else if (bf2) want = 1;
+    else if (bf3) want = 2;
+    else if (bf4) want = 3;
+    if (want < 4) {
+      pending_slot = want;
+      // Drop any stale tick so we wait for the NEXT end of bar, not one that
+      // went by while nothing was queued.
+      cli(); bar_end = 0; sei();
+    }
   }
   
   // In save mode - wait for button 1-4 to save current pattern
   if (save_mode == 1) {
-    if (bf1) { saveToSlot(0); save_mode = 0; flashConfirm(); }
-    if (bf2) { saveToSlot(1); save_mode = 0; flashConfirm(); }
-    if (bf3) { saveToSlot(2); save_mode = 0; flashConfirm(); }
-    if (bf4) { saveToSlot(3); save_mode = 0; flashConfirm(); }
+    byte want = 255;
+    if (bf1) want = 0;
+    else if (bf2) want = 1;
+    else if (bf3) want = 2;
+    else if (bf4) want = 3;
+    if (want < 4) { saveToSlot(want); save_mode = 0; flashConfirm(); }
   }
 }
 
